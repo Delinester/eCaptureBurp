@@ -6,8 +6,8 @@ package com.ecapture.burp.event;
 public class MatchedHttpPair {
     
     private final String uuid;
-    private CapturedEvent request;
-    private CapturedEvent response;
+    private volatile CapturedEvent request;
+    private volatile CapturedEvent response;
     private final long createdAt;
     private boolean sentToProxy;
     
@@ -66,9 +66,9 @@ public class MatchedHttpPair {
      */
     public String getTimestamp() {
         try {
-            if (request != null && request.getTimestamp() > 0) {
+            if (request != null) {
                 return request.getFormattedTimestamp();
-            } else if (response != null && response.getTimestamp() > 0) {
+            } else if (response != null) {
                 return response.getFormattedTimestamp();
             }
         } catch (Exception e) {
@@ -142,20 +142,37 @@ public class MatchedHttpPair {
      * Get destination port (typically the server port)
      */
     public int getPort() {
+        try {
+            int explicit = java.net.URI.create("https://" + getHost()).getPort();
+            if (explicit > 0) return explicit;
+        } catch (IllegalArgumentException ignored) {}
         if (request != null) {
-            return request.getDstPort();
+            if (request.getDstPort() > 0) return request.getDstPort();
+            if ("http".equals(request.getScheme()) || request.getUrl().startsWith("http://")) return 80;
         } else if (response != null) {
-            return response.getSrcPort();
+            if (response.getSrcPort() > 0) return response.getSrcPort();
         }
-        return 0;
+        return 443;
+    }
+
+    public String getServiceHost() {
+        try {
+            String host = java.net.URI.create("https://" + getHost()).getHost();
+            if (host != null) return host;
+        } catch (IllegalArgumentException ignored) {}
+        return getHost();
     }
     
     /**
      * Check if this is HTTPS (based on port heuristics)
      */
     public boolean isHttps() {
+        if (request != null) {
+            if ("http".equals(request.getScheme()) || request.getUrl().startsWith("http://")) return false;
+            if ("https".equals(request.getScheme()) || request.getUrl().startsWith("https://")) return true;
+        }
         int port = getPort();
-        return port == 443 || port == 8443;
+        return port != 80; // TLS plaintext feed; scheme metadata wins where available.
     }
     
     @Override
@@ -164,4 +181,3 @@ public class MatchedHttpPair {
                 uuid, getMethod(), getUrl(), getStatusCode(), isComplete());
     }
 }
-

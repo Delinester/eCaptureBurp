@@ -13,7 +13,8 @@ import com.ecapture.burp.event.EventManager;
  */
 public class ECaptureBurpExtension implements BurpExtension {
     
-    public static final String EXTENSION_NAME = "eCapture";
+    public static final String VERSION = "1.1.1";
+    public static final String EXTENSION_NAME = "eCapture " + VERSION;
     public static final String DEFAULT_WS_URL = "ws://127.0.0.1:28257/";
     
     private MontoyaApi api;
@@ -31,7 +32,7 @@ public class ECaptureBurpExtension implements BurpExtension {
         api.extension().setName(EXTENSION_NAME);
         
         logging.logToOutput("===========================================");
-        logging.logToOutput("  eCapture Burp Extension v1.0.0");
+        logging.logToOutput("  eCapture Burp Extension v" + VERSION + " (eCapture 2.6.0 compatibility)");
         logging.logToOutput("  Receive TLS/HTTP data from eCapture");
         logging.logToOutput("===========================================");
         
@@ -52,8 +53,9 @@ public class ECaptureBurpExtension implements BurpExtension {
         api.extension().registerUnloadingHandler(() -> {
             logging.logToOutput("Unloading eCapture extension...");
             if (wsClient != null) {
-                wsClient.disconnect();
+                wsClient.shutdown();
             }
+            if (mainTab != null) mainTab.dispose();
         });
         
         logging.logToOutput("eCapture extension loaded successfully!");
@@ -72,4 +74,3 @@ public class ECaptureBurpExtension implements BurpExtension {
         return eventManager;
     }
 }
-

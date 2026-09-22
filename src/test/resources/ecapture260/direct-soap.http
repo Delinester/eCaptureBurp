@@ -1,0 +1,6 @@
+POST /SAPI/MAWS/ HTTP/1.1
+Content-Type: text/xml; charset=utf-8
+Content-Length: 56
+Host: api.example.invalid
+
+<Envelope><Body><test>synthetic</test></Body></Envelope>

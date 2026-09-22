@@ -1,6 +1,7 @@
 package com.ecapture.burp.ui;
 
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
@@ -51,6 +52,10 @@ public class ECaptureTab {
     // Burp native HTTP message editors (like Proxy History)
     private HttpRequestEditor requestEditor;
     private HttpResponseEditor responseEditor;
+    private final JTextArea diagnostics = new JTextArea();
+    private final JTextArea rawPayload = new JTextArea();
+    private final List<MatchedHttpPair> displayedPairs = new java.util.ArrayList<>();
+    private Timer statsTimer;
     
     private ECaptureContextMenuProvider contextMenuProvider;
     
@@ -92,7 +97,15 @@ public class ECaptureTab {
         
         // Bottom - Request/Response split view using Burp's native editors
         JSplitPane detailSplit = createDetailSplitPane();
-        mainSplit.setBottomComponent(detailSplit);
+        JTabbedPane details = new JTabbedPane();
+        details.addTab("HTTP view", detailSplit);
+        rawPayload.setEditable(false);
+        rawPayload.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        details.addTab("Original event payload", new JScrollPane(rawPayload));
+        diagnostics.setEditable(false);
+        diagnostics.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        details.addTab("Capture diagnostics", new JScrollPane(diagnostics));
+        mainSplit.setBottomComponent(details);
         
         mainPanel.add(mainSplit, BorderLayout.CENTER);
     }
@@ -144,7 +157,7 @@ public class ECaptureTab {
     
     private JPanel createTablePanel() {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
-        panel.setBorder(new TitledBorder("Captured HTTP Traffic (GET/POST only)"));
+        panel.setBorder(new TitledBorder("Captured HTTP Traffic - all methods (HTTP/2 shown as normalized HTTP/1.1)"));
         
         // Search panel
         JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
@@ -290,7 +303,9 @@ public class ECaptureTab {
         
         // Event manager listeners
         eventManager.addPairListener(pair -> {
+            long generation = eventManager.getGeneration();
             javax.swing.SwingUtilities.invokeLater(() -> {
+                if (generation != eventManager.getGeneration()) return;
                 try {
                     updateTableSafe(pair);
                     updateStats();
@@ -304,14 +319,25 @@ public class ECaptureTab {
         // eCapture logs go to Burp Output
         eventManager.addLogListener(log -> {
             logging.logToOutput("[eCapture] " + log.trim());
+            long generation = eventManager.getGeneration();
+            SwingUtilities.invokeLater(() -> {
+                if (generation != eventManager.getGeneration()) return;
+                diagnostics.append(log + "\n\n");
+                int excess = diagnostics.getDocument().getLength() - 262144;
+                if (excess > 0) diagnostics.replaceRange("", 0, excess);
+            });
         });
         
         // Search field - filter on Enter
         searchField.addActionListener(e -> applyFilter());
         
         // Timer to update heartbeat and stats
-        Timer statsTimer = new Timer(1000, e -> updateHeartbeatAndStats());
+        statsTimer = new Timer(1000, e -> updateHeartbeatAndStats());
         statsTimer.start();
+    }
+
+    public void dispose() {
+        SwingUtilities.invokeLater(() -> { if (statsTimer != null) statsTimer.stop(); });
     }
     
     /**
@@ -326,7 +352,11 @@ public class ECaptureTab {
             
             if (existingRow != null && existingRow < tableModel.getRowCount()) {
                 // Update existing row (response arrived)
+                tableModel.setValueAt(pair.getMethod(), existingRow, 2);
+                tableModel.setValueAt(pair.getHost(), existingRow, 3);
+                tableModel.setValueAt(pair.getUrl(), existingRow, 4);
                 tableModel.setValueAt(pair.getStatusCode(), existingRow, 5);
+                tableModel.setValueAt(pair.getRequestLength(), existingRow, 6);
                 tableModel.setValueAt(pair.getResponseLength(), existingRow, 7);
                 tableModel.setValueAt(pair.isComplete() ? "✓" : "...", existingRow, 9);
                 
@@ -346,10 +376,12 @@ public class ECaptureTab {
                 rowData.add(pair.getProcessInfo());
                 rowData.add(pair.isComplete() ? "✓" : "...");
                 
+                displayedPairs.add(pair);
                 tableModel.addRow(rowData);
                 pairToRowMap.put(pairId, rowNum);
                 
             }
+            if (eventTable.getSelectedRow() >= 0) showSelectedPairDetails();
             
         } catch (Exception e) {
             logging.logToError("Error in updateTableSafe: " + e.getMessage());
@@ -358,10 +390,10 @@ public class ECaptureTab {
     }
     
     private void updateStats() {
-        statsLabel.setText(String.format("Events: %d | Pairs: %d | Pending: %d",
+        statsLabel.setText(String.format("Events: %d | Requests: %d | Pending: %d | Metadata: %d | Unparsed/control: %d",
                 eventManager.getTotalEventsReceived(),
                 eventManager.getTotalPairsMatched(),
-                eventManager.getPendingPairsCount()));
+                eventManager.getPendingPairsCount(), eventManager.getMetadataEvents(), eventManager.getUnparsedEvents()));
     }
     
     private void updateHeartbeatAndStats() {
@@ -396,7 +428,7 @@ public class ECaptureTab {
         // Convert view index to model index (for filtering)
         int modelRow = eventTable.convertRowIndexToModel(selectedRow);
         
-        List<MatchedHttpPair> pairs = eventManager.getMatchedPairs();
+        List<MatchedHttpPair> pairs = displayedPairs;
         if (modelRow >= pairs.size()) {
             return;
         }
@@ -407,17 +439,22 @@ public class ECaptureTab {
             // Build HttpRequest for the editor
             HttpRequest httpRequest = null;
             if (pair.getRequest() != null && pair.getRequest().getPayload() != null) {
-                String rawRequest = new String(pair.getRequest().getPayload());
-                httpRequest = HttpRequest.httpRequest(rawRequest);
+                httpRequest = HttpRequest.httpRequest(ByteArray.byteArray(pair.getRequest().getPayload()));
             }
             
             // Build HttpResponse for the editor
             HttpResponse httpResponse = null;
             if (pair.getResponse() != null && pair.getResponse().getPayload() != null) {
-                String rawResponse = new String(pair.getResponse().getPayload());
-                httpResponse = HttpResponse.httpResponse(rawResponse);
+                httpResponse = HttpResponse.httpResponse(ByteArray.byteArray(pair.getResponse().getPayload()));
             }
             
+            StringBuilder raw = new StringBuilder();
+            if (pair.getRequest() != null) raw.append("REQUEST ORIGINAL PAYLOAD\n")
+                    .append(new String(pair.getRequest().getRawPayload(), java.nio.charset.StandardCharsets.ISO_8859_1));
+            if (pair.getResponse() != null) raw.append("\n\nRESPONSE ORIGINAL PAYLOAD\n")
+                    .append(new String(pair.getResponse().getRawPayload(), java.nio.charset.StandardCharsets.ISO_8859_1));
+            rawPayload.setText(raw.toString());
+            rawPayload.setCaretPosition(0);
             // Set request in editor
             if (httpRequest != null) {
                 requestEditor.setRequest(httpRequest);
@@ -458,6 +495,9 @@ public class ECaptureTab {
         eventManager.clear();
         tableModel.setRowCount(0);
         pairToRowMap.clear();
+        displayedPairs.clear();
+        diagnostics.setText("");
+        rawPayload.setText("");
         
         // Clear editors
         try {
@@ -480,7 +520,7 @@ public class ECaptureTab {
         }
         
         int modelRow = eventTable.convertRowIndexToModel(selectedRow);
-        List<MatchedHttpPair> pairs = eventManager.getMatchedPairs();
+        List<MatchedHttpPair> pairs = displayedPairs;
         
         if (modelRow < pairs.size()) {
             return pairs.get(modelRow);

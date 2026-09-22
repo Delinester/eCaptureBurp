@@ -1,6 +1,7 @@
 package com.ecapture.burp.ui;
 
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.logging.Logging;
@@ -190,7 +191,7 @@ public class ECaptureContextMenuProvider implements ContextMenuItemsProvider {
         String host = pair.getHost();
         
         // Validate host
-        if (host == null || host.isEmpty() || host.equals("0.0.0.0") || host.equals("-")) {
+        if (host == null || host.isEmpty() || host.equals("0.0.0.0") || host.equals("-") || host.equals("(unknown)")) {
             logging.logToError("Cannot build request: invalid host '" + host + "'");
             return null;
         }
@@ -200,15 +201,14 @@ public class ECaptureContextMenuProvider implements ContextMenuItemsProvider {
         if (port <= 0) {
             port = 443; // Default to HTTPS
         }
-        boolean useHttps = (port == 443 || port == 8443);
+        boolean useHttps = pair.isHttps();
         
         try {
             // Create HttpService
-            HttpService httpService = HttpService.httpService(host, port, useHttps);
+            HttpService httpService = HttpService.httpService(pair.getServiceHost(), port, useHttps);
             
             // Create HttpRequest with service and raw request string
-            String rawRequest = new String(request.getPayload());
-            return HttpRequest.httpRequest(httpService, rawRequest);
+            return HttpRequest.httpRequest(httpService, ByteArray.byteArray(request.getPayload()));
         } catch (Exception e) {
             logging.logToError("Error building HttpRequest: " + e.getMessage());
             return null;

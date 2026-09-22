@@ -1,0 +1,4 @@
+kPgZgPID:4242, Comm:fixture_client, Src::0, Dest::0,
+GET /from-ecapture-260 HTTP/1.1
+Host: example.test
+

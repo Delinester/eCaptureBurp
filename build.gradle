@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'com.ecapture.burp'
-version = '1.0.0'
+version = '1.1.1'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -23,10 +23,21 @@ dependencies {
     
     // Protobuf runtime (for parsing)
     implementation 'com.google.protobuf:protobuf-java:3.25.1'
+    testImplementation 'net.portswigger.burp.extensions:montoya-api:2023.12.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testImplementation 'org.mockito:mockito-core:5.15.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    systemProperty 'java.awt.headless', 'true'
 }
 
 jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
     
     from {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
@@ -44,4 +55,5 @@ jar {
 
 tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
+    options.release = 17
 }

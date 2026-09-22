@@ -1,0 +1,20 @@
+PID:4242, Comm:fixture_client, Src::0, Dest::0,
+
+Frame Type	=>	SETTINGS
+Frame StreamID	=>	0
+
+Frame Type	=>	HEADERS
+Frame StreamID	=>	5
+Frame Length	=>	6
+header field ":status" = "200"
+header field "content-encoding" = "gzip"
+
+Frame Type	=>	DATA
+Frame StreamID	=>	5
+Frame Length	=>	41
+Partial entity body with gzip encoding ... 
+
+Merged Data Frame, StreamID	=>	5
+Merged Data Frame, Final Length	=>	17
+
+decompressed-body

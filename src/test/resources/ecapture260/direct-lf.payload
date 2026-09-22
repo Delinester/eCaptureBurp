@@ -1,0 +1,4 @@
+[2026-09-22 18:22:44.126] PID:22399 TID:22490 Comm:test with space FD:12 WRITE (45 bytes):
+PATCH /lf HTTP/1.1
+Host: lf.example.invalid
+

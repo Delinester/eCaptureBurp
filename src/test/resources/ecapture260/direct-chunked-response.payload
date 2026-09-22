@@ -1,0 +1,9 @@
+[2026-09-22 18:22:44.126] PID:22399 TID:22490 Comm:RxCachedThreadS FD:0 READ (151 bytes):
+HTTP/1.1 200 OK
+Content-Type: text/xml; charset=utf-8
+Transfer-Encoding: chunked
+
+36
+<Envelope><message>Успешно</message></Envelope>
+0
+

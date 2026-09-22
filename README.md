@@ -1,4 +1,16 @@
-# eCapture Burp Suite Extension
+# eCapture Burp Suite Extension 1.1.1
+
+Compatibility repair for **eCapture 2.6.0**, verified with upstream-generated
+fixtures and 44 regression tests. Fixes the timestamped direct OpenSSL
+`PID/TID/Comm/FD READ/WRITE` format missed by 1.1.0, in addition to retaining
+the collector-format fixes.
+Read [PATCH_NOTES.md](PATCH_NOTES.md) for the diagnosed root cause, installation
+steps, and limits; see [TEST_RESULTS.md](TEST_RESULTS.md) for verification scope.
+
+Unload the previous JAR before loading `ecapture-burp-extension-1.1.1.jar`.
+Requests now appear for all recognized HTTP methods, including eCapture's
+decoded HTTP/2 output. Missing Host/response metadata does not hide requests.
+The screenshot and Chinese README below are inherited upstream documentation.
 
 English | [中文](README_CN.md)
 
@@ -10,7 +22,8 @@ A Burp Suite extension for receiving TLS/HTTP traffic data captured by [eCapture
 
 ```bash
 cd eCaptureBurp
-./gradlew jar
+./gradlew clean test jar
+# Output: build/libs/ecapture-burp-extension-1.1.1.jar
 ```
 
 ## Usage

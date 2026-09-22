@@ -1,9 +1,21 @@
+// Synced from gojue/ecapture: protobuf/proto/v1/ecaptureq.proto
+// (verified against https://github.com/gojue/ecapture/blob/v2.6.0/protobuf/proto/v1/ecaptureq.proto)
+//
+// The wire format is IDENTICAL to upstream. The only additions are the three
+// java_* options below, which put the generated stubs into the extension's
+// Java package. See scripts/regenerate-proto.sh to re-sync after upstream
+// schema changes.
+
 syntax = "proto3";
 
 package event;
 
+option go_package = "./pb";
+
+// Java options added by eCaptureBurp (do not affect wire format):
 option java_package = "com.ecapture.burp.proto";
-option java_outer_classname = "ECaptureProto";
+option java_multiple_files = true;
+option java_outer_classname = "EcaptureqProto";
 
 enum LogType {
   LOG_TYPE_HEARTBEAT = 0;
@@ -11,6 +23,7 @@ enum LogType {
   LOG_TYPE_EVENT = 2;
 }
 
+// Base 消息定义
 message Event {
   int64 timestamp = 1;
   string uuid = 2;
@@ -31,6 +44,8 @@ message Heartbeat {
   string message = 3;
 }
 
+
+
 message LogEntry {
   LogType log_type = 1;
 
@@ -40,4 +55,3 @@ message LogEntry {
     string run_log = 4;
   }
 }
-

@@ -1,0 +1,20 @@
+€PúZúPID:4242, Comm:fixture_client, Src::0, Dest::0,
+
+Frame Type	=>	SETTINGS
+Frame StreamID	=>	0
+
+Frame Type	=>	HEADERS
+Frame StreamID	=>	1
+Frame Length	=>	24
+header field ":method" = "GET"
+header field ":scheme" = "https"
+header field ":authority" = "h2.example.test"
+header field ":path" = "/stream/1"
+
+Frame Type	=>	HEADERS
+Frame StreamID	=>	3
+Frame Length	=>	12
+header field ":method" = "GET"
+header field ":scheme" = "https"
+header field ":authority" = "h2.example.test"
+header field ":path" = "/stream/3"

@@ -4,7 +4,9 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.logging.Logging;
 import com.ecapture.burp.event.CapturedEvent;
 import com.ecapture.burp.event.EventManager;
-import com.ecapture.burp.proto.ECaptureProto;
+import com.ecapture.burp.proto.Event;
+import com.ecapture.burp.proto.Heartbeat;
+import com.ecapture.burp.proto.LogEntry;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
@@ -122,8 +124,8 @@ public class ECaptureWebSocketClient {
                 
                 @Override
                 public void onMessage(String message) {
-                    // Text messages are not expected, but log them anyway
-                    // Received text message (unexpected)
+                    eventManager.processRuntimeLog("Unexpected WebSocket text frame ("
+                            + message.length() + " characters). Expected binary ecaptureq LogEntry.");
                 }
                 
                 @Override
@@ -169,16 +171,17 @@ public class ECaptureWebSocketClient {
     /**
      * Handle binary protobuf message from eCapture.
      */
-    private void handleBinaryMessage(ByteBuffer bytes) {
+    void handleBinaryMessage(ByteBuffer bytes) {
         try {
             byte[] data = new byte[bytes.remaining()];
             bytes.get(data);
             
-            ECaptureProto.LogEntry logEntry = ECaptureProto.LogEntry.parseFrom(data);
+            LogEntry logEntry = LogEntryDecoder.decode(data);
             
             switch (logEntry.getLogType()) {
                 case LOG_TYPE_HEARTBEAT:
-                    handleHeartbeat(logEntry.getHeartbeatPayload());
+                    if (logEntry.hasHeartbeatPayload()) handleHeartbeat(logEntry.getHeartbeatPayload());
+                    else eventManager.processRuntimeLog("Heartbeat has no heartbeat_payload.");
                     break;
                     
                 case LOG_TYPE_PROCESS_LOG:
@@ -186,7 +189,8 @@ public class ECaptureWebSocketClient {
                     break;
                     
                 case LOG_TYPE_EVENT:
-                    handleEvent(logEntry.getEventPayload());
+                    if (logEntry.hasEventPayload()) handleEvent(logEntry.getEventPayload());
+                    else eventManager.processRuntimeLog("Event has no event_payload.");
                     break;
                     
                 default:
@@ -195,10 +199,14 @@ public class ECaptureWebSocketClient {
             
         } catch (InvalidProtocolBufferException e) {
             logging.logToError("Failed to parse protobuf message: " + e.getMessage());
+            eventManager.processRuntimeLog("Invalid protobuf frame: " + e.getMessage());
+        } catch (RuntimeException e) {
+            logging.logToError("Event processing failed: " + e.getMessage());
+            eventManager.processRuntimeLog("Event processing failed: " + e.getMessage());
         }
     }
     
-    private void handleHeartbeat(ECaptureProto.Heartbeat heartbeat) {
+    private void handleHeartbeat(Heartbeat heartbeat) {
         if (heartbeat != null) {
             eventManager.processHeartbeat(
                     heartbeat.getTimestamp(),
@@ -214,7 +222,7 @@ public class ECaptureWebSocketClient {
         }
     }
     
-    private void handleEvent(ECaptureProto.Event event) {
+    private void handleEvent(Event event) {
         if (event == null) {
             return;
         }
@@ -333,4 +341,3 @@ public class ECaptureWebSocketClient {
         scheduler.shutdownNow();
     }
 }
-
