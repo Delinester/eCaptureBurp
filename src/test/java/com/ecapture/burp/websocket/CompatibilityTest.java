@@ -39,7 +39,7 @@ class CompatibilityTest {
         manager = new EventManager(api);
         client = new ECaptureWebSocketClient(api, manager);
     }
-    @AfterEach void cleanup() { client.shutdown(); }
+    @AfterEach void cleanup() { client.shutdown(); manager.shutdown(); }
     static byte[] fixture(String name) throws Exception {
         return resource(name + ".bin");
     }
@@ -142,6 +142,39 @@ class CompatibilityTest {
         for (int i = 0; i < 100; i++)
             manager.processEvent(event("4242_1_app_7_1", 1, "GET /" + i + " HTTP/1.1\r\n\r\n"));
         assertEquals(100, manager.getMatchedPairs().stream().map(MatchedHttpPair::getUuid).distinct().count());
+    }
+    @Test void blockedSiteMapDoesNotBlockFurtherCapturesOrStats() throws Exception {
+        CountDownLatch enteredSiteMap = new CountDownLatch(1);
+        CountDownLatch releaseSiteMap = new CountDownLatch(1);
+        var field = EventManager.class.getDeclaredField("siteMapExecutor");
+        field.setAccessible(true);
+        var siteMapWorker = (ThreadPoolExecutor) field.get(manager);
+        siteMapWorker.execute(() -> {
+            enteredSiteMap.countDown();
+            try { releaseSiteMap.await(5, TimeUnit.SECONDS); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+        });
+        try {
+            assertTrue(enteredSiteMap.await(2, TimeUnit.SECONDS));
+            manager.processEvent(event("4242_1_app_7_1", 1,
+                    "GET /first HTTP/1.1\r\nHost: example.test\r\n\r\n"));
+            manager.processEvent(event("4242_1_app_7_0", 3,
+                    "HTTP/1.1 200 OK\r\n\r\n"));
+            assertEquals(1, siteMapWorker.getQueue().size());
+            ExecutorService capture = Executors.newSingleThreadExecutor();
+            try {
+                Future<Long> result = capture.submit(() -> {
+                    for (int i = 0; i < 40; i++) manager.processEvent(event("", 1,
+                            "GET /next/" + i + " HTTP/1.1\r\n\r\n"));
+                    return manager.getTotalPairsMatched();
+                });
+                assertEquals(41, result.get(2, TimeUnit.SECONDS));
+            } finally {
+                capture.shutdownNow();
+            }
+        } finally {
+            releaseSiteMap.countDown();
+        }
     }
     @Test void distinctFileDescriptorsAreNotCrossPaired() {
         manager.processEvent(event("4242_99_proc_with_underscores_7_1", 1, "GET /fd7 HTTP/1.1\r\n\r\n"));

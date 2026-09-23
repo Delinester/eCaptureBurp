@@ -9,6 +9,9 @@ import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.logging.Logging;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /** Separates received transport events from visible HTTP messages. */
@@ -22,6 +25,14 @@ public class EventManager {
     private final List<Consumer<MatchedHttpPair>> pairListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<String>> logListeners = new CopyOnWriteArrayList<>();
     private final Http2TextDecoder h2 = new Http2TextDecoder();
+    // Burp's Site Map can block while its UI is busy. Never call it while holding
+    // the event manager monitor (or on the WebSocket receive thread).
+    private final ThreadPoolExecutor siteMapExecutor = new ThreadPoolExecutor(1, 1, 0L,
+            TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(1024), runnable -> {
+                Thread thread = new Thread(runnable, "eCapture-SiteMap");
+                thread.setDaemon(true);
+                return thread;
+            }, new ThreadPoolExecutor.DiscardPolicy());
     private volatile long totalEventsReceived, lastHeartbeatTime, heartbeatCount, unparsedEvents, metadataEvents, generation;
     private long sequence;
 
@@ -86,7 +97,16 @@ public class EventManager {
         if (pair == null) pair = newPair(); // Standalone response stays visible.
         if (event.isRequest()) pair.setRequest(event); else pair.setResponse(event);
         notifyPair(pair);
-        if (pair.isComplete()) sendToSiteMapSafe(pair);
+        if (pair.isComplete()) {
+            // Snapshot the pair before later HTTP/2 DATA frames can change it.
+            CapturedEvent request = pair.getRequest();
+            CapturedEvent response = pair.getResponse();
+            String host = pair.getHost();
+            String serviceHost = pair.getServiceHost();
+            int port = pair.getPort();
+            boolean https = pair.isHttps();
+            siteMapExecutor.execute(() -> sendToSiteMapSafe(request, response, host, serviceHost, port, https));
+        }
     }
 
     private MatchedHttpPair newPair() {
@@ -115,13 +135,13 @@ public class EventManager {
             catch (RuntimeException e) { logging.logToError("Pair listener failed: " + e.getMessage()); }
         }
     }
-    private void sendToSiteMapSafe(MatchedHttpPair pair) {
+    private void sendToSiteMapSafe(CapturedEvent capturedRequest, CapturedEvent capturedResponse,
+                                   String host, String serviceHost, int port, boolean https) {
         try {
-            String host = pair.getHost();
             if (host.equals("(unknown)") || host.isBlank()) return;
-            HttpService service = HttpService.httpService(pair.getServiceHost(), pair.getPort(), pair.isHttps());
-            HttpRequest request = HttpRequest.httpRequest(service, ByteArray.byteArray(pair.getRequest().getPayload()));
-            HttpResponse response = HttpResponse.httpResponse(ByteArray.byteArray(pair.getResponse().getPayload()));
+            HttpService service = HttpService.httpService(serviceHost, port, https);
+            HttpRequest request = HttpRequest.httpRequest(service, ByteArray.byteArray(capturedRequest.getPayload()));
+            HttpResponse response = HttpResponse.httpResponse(ByteArray.byteArray(capturedResponse.getPayload()));
             api.siteMap().add(HttpRequestResponse.httpRequestResponse(request, response));
         } catch (RuntimeException e) {
             logging.logToError("Optional Site Map update failed: " + e.getMessage());
@@ -140,6 +160,7 @@ public class EventManager {
     }
     public void addPairListener(Consumer<MatchedHttpPair> listener) { pairListeners.add(listener); }
     public void addLogListener(Consumer<String> listener) { logListeners.add(listener); }
+    public void shutdown() { siteMapExecutor.shutdownNow(); }
     public synchronized List<MatchedHttpPair> getMatchedPairs() { return new ArrayList<>(matchedPairs); }
     public synchronized List<String> getRuntimeLogs() { return new ArrayList<>(runtimeLogs); }
     public synchronized void clear() {

@@ -55,6 +55,7 @@ public class ECaptureBurpExtension implements BurpExtension {
             if (wsClient != null) {
                 wsClient.shutdown();
             }
+            if (eventManager != null) eventManager.shutdown();
             if (mainTab != null) mainTab.dispose();
         });
         

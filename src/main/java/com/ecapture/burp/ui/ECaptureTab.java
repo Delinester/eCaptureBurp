@@ -381,7 +381,11 @@ public class ECaptureTab {
                 pairToRowMap.put(pairId, rowNum);
                 
             }
-            if (eventTable.getSelectedRow() >= 0) showSelectedPairDetails();
+            // New traffic must not rebuild the selected Burp editors and raw
+            // payload. Only refresh details when this pair itself changed.
+            int selectedRow = eventTable.getSelectedRow();
+            if (selectedRow >= 0 && eventTable.convertRowIndexToModel(selectedRow)
+                    == pairToRowMap.get(pairId)) showSelectedPairDetails();
             
         } catch (Exception e) {
             logging.logToError("Error in updateTableSafe: " + e.getMessage());
